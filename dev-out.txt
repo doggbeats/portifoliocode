@@ -1,0 +1,27 @@
+
+> my-app@0.1.0 dev
+> next dev
+
+▲ Next.js 16.4.6 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://54.232.189.113:3000
+✓ Ready in 1596ms
+✓ Running next.config.ts took 93ms
+- Cache Components enabled
+- Partial Prefetching enabled
+- Experiments (use with caution):
+  ✓ agentFeedback
+
+ GET / 200 in 4.4s (next.js: 1740ms, application-code: 2.7s)
+ GET / 200 in 605ms (next.js: 8ms, application-code: 597ms)
+[browser] LiquidReveal shader error Error: shader compile failed
+    at LiquidReveal.useEffect.compileShader (components/liquid-reveal.tsx:144:15)
+    at LiquidReveal.useEffect (components/liquid-reveal.tsx:153:28)
+    at RootLayout (app\layout.tsx:128:9)
+  142 |         const info = gl.getShaderInfoLog(shader);
+  143 |         gl.deleteShader(shader);
+> 144 |         throw new Error(info || "shader compile failed");
+      |               ^
+  145 |       }
+  146 |       return shader;
+  147 |     }; (components/liquid-reveal.tsx:166:15)
