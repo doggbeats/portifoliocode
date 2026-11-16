@@ -44,6 +44,7 @@ export function ProjectMedia({ project }: { project: Project }) {
     <div
       className="project-visual project-visual--media"
       data-reveal-image
+      suppressHydrationWarning
       style={{ aspectRatio: `${project.media.width} / ${project.media.height}` }}
     >
       <Image

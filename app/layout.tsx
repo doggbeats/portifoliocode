@@ -1,10 +1,13 @@
 import type { Metadata, Viewport } from "next";
 import { Inter, JetBrains_Mono, Sora } from "next/font/google";
 
+import { AccessibilityWidget } from "@/components/accessibility-widget";
 import { LiquidReveal } from "@/components/liquid-reveal";
 import { Providers } from "@/components/providers";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
+import { WhatsAppFloat } from "@/components/whatsapp-float";
+import { accessibilityInitScript } from "@/lib/accessibility";
 import { introInitScript } from "@/lib/intro";
 import { siteConfig } from "@/lib/site";
 import { themeInitScript } from "@/lib/theme";
@@ -114,6 +117,10 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           dangerouslySetInnerHTML={{ __html: introInitScript }}
           suppressHydrationWarning
         />
+        <script
+          dangerouslySetInnerHTML={{ __html: accessibilityInitScript }}
+          suppressHydrationWarning
+        />
       </head>
       <body className="min-h-dvh bg-bg font-sans text-fg antialiased">
         <a href="#conteudo" className="skip-link">
@@ -126,6 +133,8 @@ export default function RootLayout({ children }: LayoutProps<"/">) {
           <SiteFooter />
         </Providers>
         <LiquidReveal />
+        <WhatsAppFloat />
+        <AccessibilityWidget />
       </body>
     </html>
   );

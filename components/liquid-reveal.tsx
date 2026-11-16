@@ -1,16 +1,22 @@
 "use client";
 
-import { useEffect, useRef } from "react";
+import { usePathname } from "next/navigation";
+import { useEffect, useRef, useState } from "react";
 
 import { gsap } from "gsap";
 import { ScrollTrigger } from "gsap/ScrollTrigger";
+
+import {
+  ACCESSIBILITY_CHANGE_EVENT,
+  prefersReducedMotion,
+} from "@/lib/accessibility";
 
 const vertexSource = `attribute vec2 a_position;
 void main() {
   gl_Position = vec4(a_position, 0.0, 1.0);
 }`;
 
-const openingScrollDistance = 180;
+const openingScrollDistance = 320;
 
 const fragmentSource = `precision mediump float;
 uniform float u_progress;
@@ -62,17 +68,21 @@ void main() {
     max(length(topLeft), length(topRight)),
     max(length(bottomLeft), length(bottomRight))
   );
-  float radius = mix(0.2, maxRadius + 0.08, pow(progress, 1.12));
+  float radius = mix(0.16, maxRadius + 0.12, pow(progress, 1.08));
 
   float angle = atan(scaledDelta.y, scaledDelta.x);
-  float flow = fbm(scaledDelta * 4.2 + vec2(u_time * 0.035, -u_time * 0.022));
+  float flow = fbm(scaledDelta * 3.4 + vec2(u_time * 0.03, -u_time * 0.02));
+  float flow2 = fbm(scaledDelta * 7.2 - vec2(u_time * 0.02, u_time * 0.028));
   float pointerDistance = length((point - u_mouse) * vec2(aspect, 1.0));
-  float pointerInfluence = exp(-pointerDistance * 8.0);
-  float ripple = sin(angle * 3.0 + u_time * 0.45) * 0.012
-    + sin(angle * 6.0 - u_time * 0.32) * 0.008;
-  float organicEdge = radius + (flow - 0.5) * 0.11
-    + ripple + pointerInfluence * sin(angle * 2.0 + u_time) * 0.012;
-  float alpha = smoothstep(organicEdge - 0.018, organicEdge + 0.018, distanceFromCenter);
+  float pointerInfluence = exp(-pointerDistance * 7.0);
+  float wobble = sin(angle * 2.0 + u_time * 0.35) * 0.02
+    + sin(angle * 5.0 - u_time * 0.22 + flow * 3.14159) * 0.014;
+  float organicEdge = radius
+    + (flow - 0.5) * 0.18
+    + (flow2 - 0.5) * 0.07
+    + wobble
+    + pointerInfluence * (flow - 0.5) * 0.03;
+  float alpha = smoothstep(organicEdge - 0.022, organicEdge + 0.03, distanceFromCenter);
 
   gl_FragColor = vec4(u_color, alpha);
 }`;
@@ -108,16 +118,87 @@ function parseColor(value: string): [number, number, number] {
 export function LiquidReveal() {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const promptRef = useRef<HTMLDivElement>(null);
+  const markRef = useRef<HTMLDivElement>(null);
+  const markTextRef = useRef<HTMLSpanElement>(null);
+  const fallbackRef = useRef<HTMLDivElement>(null);
+  const pathname = usePathname();
+  const [hashVersion, setHashVersion] = useState(0);
+
+  useEffect(() => {
+    const syncHash = () => setHashVersion((version) => version + 1);
+
+    window.addEventListener("hashchange", syncHash);
+
+    return () => window.removeEventListener("hashchange", syncHash);
+  }, []);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     const prompt = promptRef.current;
-    if (!canvas || document.documentElement.dataset.intro !== "on") return;
+    const mark = markRef.current;
+    const markText = markTextRef.current;
+    const fallback = fallbackRef.current;
+    if (!canvas || !prompt || !mark || !markText || !fallback) return;
+
+    const root = document.documentElement;
+    const hash = window.location.hash;
+    const introAllowed =
+      pathname === "/" && (hash === "" || hash === "#inicio");
+    const label = "<CODE_PH/>";
+    let typingTimer: ReturnType<typeof setTimeout> | null = null;
+    let typingIndex = 0;
+
+    const stopTyping = () => {
+      if (typingTimer) {
+        clearTimeout(typingTimer);
+        typingTimer = null;
+      }
+    };
+
+    const startTyping = () => {
+      stopTyping();
+      typingIndex = 1;
+      markText.textContent = label.slice(0, 1);
+      mark.dataset.typingDone = "false";
+      const step = () => {
+        typingIndex += 1;
+        markText.textContent = label.slice(0, typingIndex);
+        if (typingIndex < label.length) {
+          typingTimer = setTimeout(step, 110);
+        } else {
+          mark.dataset.typingDone = "true";
+          typingTimer = null;
+        }
+      };
+      if (label.length > 1) {
+        typingTimer = setTimeout(step, 180);
+      } else {
+        mark.dataset.typingDone = "true";
+      }
+    };
+
+    const hideIntro = () => {
+      stopTyping();
+      canvas.style.display = "none";
+      fallback.style.display = "none";
+      prompt.style.visibility = "hidden";
+      prompt.style.opacity = "0";
+      mark.style.visibility = "hidden";
+      mark.style.opacity = "0";
+      root.dataset.intro = "off";
+      root.style.removeProperty("--intro-progress");
+    };
+
+    if (prefersReducedMotion() || !introAllowed) {
+      hideIntro();
+      return;
+    }
+
+    root.dataset.intro = "on";
 
     const motionPreference = window.matchMedia(
       "(prefers-reduced-motion: reduce)",
     );
-    if (motionPreference.matches) return;
 
     const gl =
       (canvas.getContext("webgl", {
@@ -127,8 +208,64 @@ export function LiquidReveal() {
       }) as WebGLRenderingContext | null) ||
       (canvas.getContext("experimental-webgl") as WebGLRenderingContext | null);
     if (!gl) {
-      document.documentElement.dataset.intro = "off";
-      return;
+      root.dataset.introFallback = "on";
+      root.dataset.intro = "on";
+      canvas.style.display = "none";
+      fallback.style.display = "block";
+
+      let progress = Math.min(window.scrollY / openingScrollDistance, 1);
+      const heroVisual = document.querySelector<HTMLElement>(".hero__visual");
+      const heroRect = heroVisual?.getBoundingClientRect();
+      const heroOffsetX = heroRect
+        ? window.innerWidth / 2 - (heroRect.left + heroRect.width / 2)
+        : 0;
+      const heroOffsetY = heroRect
+        ? window.innerHeight / 2 - (heroRect.top + heroRect.height / 2)
+        : 0;
+
+      const updateHeroVisual = () => {
+        if (!heroVisual) return;
+        const remaining = 1 - progress;
+        root.style.setProperty("--intro-hero-x", `${heroOffsetX * remaining}px`);
+        root.style.setProperty("--intro-hero-y", `${heroOffsetY * remaining}px`);
+      };
+
+      const updateUi = () => {
+        root.style.setProperty("--intro-progress", String(progress));
+        fallback.style.display = progress >= 0.98 ? "none" : "block";
+        prompt.style.visibility = progress >= 0.12 ? "hidden" : "visible";
+        prompt.style.opacity = String(Math.max(0, 1 - progress / 0.12));
+        const markOpacity = Math.max(0, 1 - progress / 0.55);
+        mark.style.opacity = String(markOpacity);
+        mark.style.visibility = progress >= 0.98 ? "hidden" : "visible";
+        mark.style.transform = `translate(-50%, -50%) scale(${1 + progress * 0.06})`;
+      };
+
+      startTyping();
+      updateHeroVisual();
+      updateUi();
+
+      gsap.registerPlugin(ScrollTrigger);
+      const trigger = ScrollTrigger.create({
+        trigger: root,
+        start: "top top",
+        end: () => ScrollTrigger.maxScroll(window) || 1,
+        scrub: true,
+        invalidateOnRefresh: true,
+        onUpdate: (self) => {
+          progress = Math.min(self.scroll() / openingScrollDistance, 1);
+          updateHeroVisual();
+          updateUi();
+        },
+      });
+
+      return () => {
+        stopTyping();
+        trigger.kill();
+        root.style.removeProperty("--intro-progress");
+        root.style.removeProperty("--intro-hero-x");
+        root.style.removeProperty("--intro-hero-y");
+      };
     }
 
     let program: WebGLProgram | null = null;
@@ -170,6 +307,7 @@ export function LiquidReveal() {
       if (program) gl.deleteProgram(program);
       gl.deleteBuffer(buffer);
       canvas.style.display = "none";
+      document.documentElement.dataset.introFallback = "on";
       document.documentElement.dataset.intro = "off";
       return;
     }
@@ -236,12 +374,14 @@ export function LiquidReveal() {
         window.devicePixelRatio || 1,
         window.innerWidth < 768 ? 1 : 1.25,
       );
-      const width = Math.floor(window.innerWidth * dpr);
-      const height = Math.floor(window.innerHeight * dpr);
+      const viewportWidth = window.visualViewport?.width ?? window.innerWidth;
+      const viewportHeight = window.visualViewport?.height ?? window.innerHeight;
+      const width = Math.floor(viewportWidth * dpr);
+      const height = Math.floor(viewportHeight * dpr);
       canvas.width = width;
       canvas.height = height;
-      canvas.style.width = `${window.innerWidth}px`;
-      canvas.style.height = `${window.innerHeight}px`;
+      canvas.style.width = `${viewportWidth}px`;
+      canvas.style.height = `${viewportHeight}px`;
       gl.viewport(0, 0, width, height);
       if (uResolution) gl.uniform2f(uResolution, width, height);
     };
@@ -264,6 +404,10 @@ export function LiquidReveal() {
       if (uTime) gl.uniform1f(uTime, (performance.now() - startTime) / 1000);
       if (uMouse) gl.uniform2f(uMouse, mouseX, mouseY);
       gl.drawArrays(gl.TRIANGLES, 0, 6);
+
+      if (!disposed && progress < 0.98) {
+        rafId = requestAnimationFrame(draw);
+      }
     };
 
     const requestDraw = () => {
@@ -281,11 +425,20 @@ export function LiquidReveal() {
     resize();
     updateColor();
     updateHeroVisual();
-    canvas.style.display = progress >= 0.98 ? "none" : "block";
-    if (prompt) {
-      prompt.style.visibility = progress >= 0.12 ? "hidden" : "visible";
-      prompt.style.opacity = String(Math.max(0, 1 - progress / 0.12));
-    }
+    const updateIntroUi = () => {
+      canvas.style.display = progress >= 0.98 ? "none" : "block";
+      if (prompt) {
+        prompt.style.visibility = progress >= 0.12 ? "hidden" : "visible";
+        prompt.style.opacity = String(Math.max(0, 1 - progress / 0.12));
+      }
+      if (mark) {
+        const markOpacity = Math.max(0, 1 - progress / 0.55);
+        mark.style.opacity = String(markOpacity);
+        mark.style.visibility = progress >= 0.98 ? "hidden" : "visible";
+        mark.style.transform = `translate(-50%, -50%) scale(${1 + progress * 0.06})`;
+      }
+    };
+    updateIntroUi();
 
     gsap.registerPlugin(ScrollTrigger);
     const trigger = ScrollTrigger.create({
@@ -297,15 +450,12 @@ export function LiquidReveal() {
       onUpdate: (self) => {
         progress = Math.min(self.scroll() / openingScrollDistance, 1);
         updateHeroVisual();
-        canvas.style.display = progress >= 0.98 ? "none" : "block";
-        if (prompt) {
-          prompt.style.opacity = String(
-            Math.max(0, 1 - progress / 0.12),
-          );
-          prompt.style.visibility =
-            progress >= 0.12 ? "hidden" : "visible";
-        }
+        updateIntroUi();
         requestDraw();
+        if (progress >= 0.98 && rafId) {
+          cancelAnimationFrame(rafId);
+          rafId = 0;
+        }
       },
     });
 
@@ -319,10 +469,18 @@ export function LiquidReveal() {
     });
     const stopForReducedMotion = () => {
       disposed = true;
+      stopTyping();
       canvas.style.display = "none";
       document.documentElement.style.removeProperty("--intro-hero-x");
       document.documentElement.style.removeProperty("--intro-hero-y");
-      if (prompt) prompt.style.visibility = "hidden";
+      if (prompt) {
+        prompt.style.visibility = "hidden";
+        prompt.style.opacity = "0";
+      }
+      if (mark) {
+        mark.style.visibility = "hidden";
+        mark.style.opacity = "0";
+      }
       cancelAnimationFrame(rafId);
       window.removeEventListener("pointermove", updateMouse);
       window.removeEventListener("resize", handleResize);
@@ -333,9 +491,16 @@ export function LiquidReveal() {
     const handleMotionChange = (event: MediaQueryListEvent) => {
       if (event.matches) stopForReducedMotion();
     };
+    const handleAccessibilityChange = () => {
+      if (prefersReducedMotion()) stopForReducedMotion();
+    };
 
     window.addEventListener("pointermove", updateMouse, { passive: true });
     window.addEventListener("resize", handleResize);
+    window.addEventListener(
+      ACCESSIBILITY_CHANGE_EVENT,
+      handleAccessibilityChange,
+    );
     themeObserver.observe(document.documentElement, {
       attributes: true,
       attributeFilter: ["data-theme"],
@@ -345,9 +510,14 @@ export function LiquidReveal() {
 
     return () => {
       disposed = true;
+      stopTyping();
       cancelAnimationFrame(rafId);
       window.removeEventListener("pointermove", updateMouse);
       window.removeEventListener("resize", handleResize);
+      window.removeEventListener(
+        ACCESSIBILITY_CHANGE_EVENT,
+        handleAccessibilityChange,
+      );
       motionPreference.removeEventListener("change", handleMotionChange);
       themeObserver.disconnect();
       trigger.kill();
@@ -355,7 +525,7 @@ export function LiquidReveal() {
       document.documentElement.style.removeProperty("--intro-hero-y");
       releaseResources();
     };
-  }, []);
+  }, [pathname, hashVersion]);
 
   return (
     <>
@@ -366,12 +536,58 @@ export function LiquidReveal() {
           position: "fixed",
           inset: 0,
           width: "100%",
-          height: "100%",
+          height: "100dvh",
           zIndex: 90,
           pointerEvents: "none",
           display: "none",
         }}
       />
+      <div
+        ref={fallbackRef}
+        className="liquid-intro-fallback"
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          inset: 0,
+          width: "100%",
+          height: "100dvh",
+          zIndex: 90,
+          pointerEvents: "none",
+          display: "none",
+        }}
+      />
+      <div
+        ref={markRef}
+        className="liquid-intro-mark"
+        aria-hidden="true"
+        style={{
+          position: "fixed",
+          top: "50%",
+          left: "50%",
+          zIndex: 89,
+          transform: "translate(-50%, -50%)",
+          pointerEvents: "none",
+          userSelect: "none",
+          opacity: 0,
+          visibility: "hidden",
+          transition: "opacity 0.12s linear",
+          willChange: "transform, opacity",
+          color: "var(--fg)",
+          fontFamily: "var(--font-mono-code), monospace",
+          fontSize: "clamp(1rem, 6vw, 3rem)",
+          fontWeight: 500,
+          letterSpacing: "0.06em",
+          lineHeight: 1,
+          whiteSpace: "nowrap",
+          maxWidth: "92vw",
+          textAlign: "center",
+        }}
+      >
+        <span ref={markTextRef} className="liquid-intro-mark__text" />
+        <span className="liquid-intro-mark__cursor" aria-hidden="true">
+          |
+        </span>
+      </div>
       <div
         ref={promptRef}
         className="liquid-scroll-prompt"

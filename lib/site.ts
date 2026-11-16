@@ -1,10 +1,12 @@
 const rawSiteUrl =
   process.env.NEXT_PUBLIC_SITE_URL?.trim() || "http://localhost:3000";
 
-const whatsappNumber = (process.env.NEXT_PUBLIC_WHATSAPP_NUMBER || "").replace(
-  /\D/g,
-  "",
-);
+const FALLBACK_WHATSAPP_NUMBER = "5561992890326";
+
+const whatsappNumber = (
+  process.env.NEXT_PUBLIC_WHATSAPP_NUMBER?.trim() ||
+  FALLBACK_WHATSAPP_NUMBER
+).replace(/\D/g, "");
 
 const email = process.env.NEXT_PUBLIC_CONTACT_EMAIL?.trim() || "";
 const phone = process.env.NEXT_PUBLIC_CONTACT_PHONE?.trim() || "";
