@@ -68,7 +68,8 @@ void main() {
     max(length(topLeft), length(topRight)),
     max(length(bottomLeft), length(bottomRight))
   );
-  float radius = mix(0.16, maxRadius + 0.12, pow(progress, 1.08));
+  float open = smoothstep(0.0, 0.78, progress);
+  float radius = mix(0.14, maxRadius + 0.16, pow(open, 0.92));
 
   float angle = atan(scaledDelta.y, scaledDelta.x);
   float flow = fbm(scaledDelta * 3.4 + vec2(u_time * 0.03, -u_time * 0.02));
@@ -83,6 +84,7 @@ void main() {
     + wobble
     + pointerInfluence * (flow - 0.5) * 0.03;
   float alpha = smoothstep(organicEdge - 0.022, organicEdge + 0.03, distanceFromCenter);
+  alpha *= 1.0 - smoothstep(0.72, 0.98, progress);
 
   gl_FragColor = vec4(u_color, alpha);
 }`;
@@ -231,11 +233,13 @@ export function LiquidReveal() {
       };
 
       const updateUi = () => {
-        root.style.setProperty("--intro-progress", String(progress));
+        const openP = Math.min(progress / 0.78, 1);
+        root.style.setProperty("--intro-progress", String(openP));
         fallback.style.display = progress >= 0.98 ? "none" : "block";
+        fallback.style.opacity = String(Math.max(0, 1 - Math.max(0, (progress - 0.72) / 0.26)));
         prompt.style.visibility = progress >= 0.12 ? "hidden" : "visible";
         prompt.style.opacity = String(Math.max(0, 1 - progress / 0.12));
-        const markOpacity = Math.max(0, 1 - progress / 0.55);
+        const markOpacity = Math.max(0, 1 - progress / 0.45);
         mark.style.opacity = String(markOpacity);
         mark.style.visibility = progress >= 0.98 ? "hidden" : "visible";
         mark.style.transform = `translate(-50%, -50%) scale(${1 + progress * 0.06})`;
